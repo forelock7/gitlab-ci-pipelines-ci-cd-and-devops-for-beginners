@@ -325,3 +325,308 @@ stage: test
 script: - echo "Testing" - test -f "build/index.html"
 
 You can override stage just define it with the same name after.
+
+# Section 3: Continuous Deployment (CD) with GitLab
+
+## 46. Section Overview
+
+- https://app.netlify.com/signup
+
+## 47. Manual deployment
+
+- https://app.netlify.com/sites/forelock-learn-gitlab/overview
+
+## 48. Installing CLI tools
+
+- https://docs.netlify.com/cli/get-started/
+
+...
+netlify:
+image: node:22-alpine
+stage: .pre
+script: - npm install -g netlify-cli - netlify --version
+
+## 49. Storing project configuration in environment variables
+
+- https://cli.netlify.com/commands/deploy/ (find vars -> NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID)
+
+Define env var for job:
+....
+netlify:
+image: node:22-alpine
+stage: .pre
+variables:
+NETLIFY_SITE_ID: 'f580bcf5-9536-48bd-8426-7cf7dbe9c16b'
+script: - npm install -g netlify-cli - netlify --version - echo "Deploying to site id $NETLIFY_SITE_ID"
+
+## 50. Managing secrets
+
+Go to Netlify in the progect:
+User settings -> OAuth -> Personal access tokens -> Genarate token
+
+Go to GitLab:
+Project -> Settings -> CI/CD -> Variables
+Create variable with 'Masked and hidden visibility', 'Protect variable'=false, 'Expand variable reference'=false
+NETLIFY_AUTH_TOKEN='Generated token' (https://cli.netlify.com/commands/deploy/)
+
+## 51. Managing secrets
+
+???
+
+## 52. Best practices for handling credentials
+
+## 53. Deploying to production
+
+- https://cli.netlify.com/commands/deploy/
+- https://docs.netlify.com/site-deploys/create-deploys/#netlify-cli
+
+....
+netlify:
+image: node:22-alpine
+stage: deploy
+variables:
+NETLIFY_SITE_ID: 'f580bcf5-9536-48bd-8426-7cf7dbe9c16b'
+script: - npm install -g netlify-cli - netlify --version - netlify status - echo "Deploying to site id $NETLIFY_SITE_ID" - netlify deploy --prod --no-build --dir=build
+
+## 54. Smoke tests
+
+## 55. Conditional job execution with rules:
+
+- https://docs.gitlab.com/ci/yaml/#rules
+- https://docs.gitlab.com/ci/variables/predefined_variables/
+
+...
+netlify:
+image: node:22-alpine
+stage: deploy
+rules: - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+...
+
+where:
+CI_COMMIT_REF_NAME - The branch or tag name for which project is built. (Pre-pipeline)
+CI_DEFAULT_BRANCH - The name of the project’s default branch. (Pre-pipeline)
+
+## 56. Scripts: before_script and after_script
+
+- https://docs.gitlab.com/ci/yaml/#before_script
+- https://docs.gitlab.com/ci/yaml/#after_script
+
+default:
+before_script: - echo "This is executed in all jobs"
+...
+
+netlify:
+image: node:22-alpine
+....
+before_script: - npm install -g netlify-cli - apk add curl
+script: - netlify --version
+....
+
+## 57. Deployment Strategies: Non-production environments
+
+## 58. Deploying to the staging environment
+
+netlify_staging:
+image: node:22-alpine
+stage: deploy_staging
+rules: - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+before_script: - npm install -g netlify-cli - apk add curl
+script: - netlify --version - netlify status - echo "Deploying to site id $NETLIFY_SITE_ID" - netlify deploy --alias=staging --no-build --dir=build - curl 'https://staging--forelock-learn-gitlab.netlify.app/' | grep 'GitLab'
+
+netlify_prod:
+image: node:22-alpine
+stage: deploy_prod
+rules: - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+before_script: - npm install -g netlify-cli - apk add curl
+script: - netlify --version - netlify status - echo "Deploying to site id $NETLIFY_SITE_ID" - netlify deploy --prod --no-build --dir=build - curl 'https://forelock-learn-gitlab.netlify.app/' | grep 'GitLab'
+
+## 59. Manual approval step before deploying to production
+
+netlify_prod:
+image: node:22-alpine
+stage: deploy_prod
+when: manual ----- !!!!
+rules: - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+
+## 60. Continuous Delivery and Continuous Deployment
+
+Continuous Delivery - require manual deploying to production
+
+Continuous Deployment - deploys app into production automatically without any manual actions
+
+## 61. Creating review environments
+
+- https://docs.gitlab.com/ci/review_apps/
+
+With
+
+...
+netlify_review:
+image: node:22-alpine
+stage: deploy_review
+before_script: - npm install -g netlify-cli
+script: - netlify --version - netlify status - echo "Deploying to site id $NETLIFY_SITE_ID" - netlify deploy --no-build --dir=build
+....
+
+## 62. Merge request pipeline vs Branch pipeline
+
+- https://medium.com/devops-with-valentine/fix-gitlab-ci-duplicate-pipelines-in-merge-requests-when-using-rules-9a1486994f3a
+- https://docs.gitlab.com/ci/pipelines/merge_request_pipelines/
+- https://docs.gitlab.com/ci/yaml/workflow/
+
+Setting up globally on the top of the file:
+
+workflow:
+rules: - if: '$CI_PIPELINE_SOURCE == "merge_request_event"' ----- Control when merge request pipelines run. - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+....
+
+## 63. Parsing CLI response data (w/ jq JSON parser)
+
+- https://jqlang.org/
+
+netlify_review:
+image: node:22-alpine
+stage: deploy_review
+rules:
+
+- if: $CI_COMMIT_REF_NAME != $CI_DEFAULT_BRANCH
+  before_script:
+  - npm install -g netlify-cli
+  - apk add curl jq ----- 'jq' is to parse json
+    script:
+  - netlify --version
+  - netlify status
+  - echo "Deploying to site id $NETLIFY_SITE_ID"
+  - netlify deploy --no-build --dir=build --json | tee deploy-result.json ---- netlify cli output as json and then tee outout to consol and write into json file
+  - cat deploy-result.json
+  - REVIEW_URL=$(jq -r '.deploy_url' deploy-result.json) ---- prase json and extract value
+  - echo $REVIEW_URL
+  - curl $REVIEW_URL | grep 'GitLab'
+
+## 64. Defining dynamic environments
+
+- https://docs.gitlab.com/ci/yaml/artifacts_reports/#artifactsreportsdotenv
+- https://docs.gitlab.com/ci/environments/#set-a-dynamic-environment-url
+- https://docs.gitlab.com/ci/variables/predefined_variables/
+
+netlify_review:
+image: node:22-alpine
+stage: deploy_review
+rules:
+
+- if: $CI_COMMIT_REF_NAME != $CI_DEFAULT_BRANCH
+  environment:    ----!!!!
+    name: preview/$CI_COMMIT_REF_SLUG
+  url: $REVIEW_URL
+  before_script:
+  - npm install -g netlify-cli
+  - apk add curl jq
+    script:
+  - netlify --version
+  - netlify status
+  - echo "Deploying to site id $NETLIFY_SITE_ID"
+  - netlify deploy --no-build --dir=build --json | tee deploy-result.json
+  - cat deploy-result.json
+  - REVIEW_URL=$(jq -r '.deploy_url' deploy-result.json)
+  - echo $REVIEW_URL
+  - curl $REVIEW_URL | grep 'GitLab'
+  - echo "REVIEW_URL=$REVIEW_URL" > deploy.env ---- !!!!
+  - cat deploy.env
+    artifacts: ------!!!!
+    reports:
+    dotenv: deploy.env
+
+![Sample Image](img/dynemic-env.png)
+
+## 65. Defining static environments
+
+- https://docs.gitlab.com/ci/environments/
+  To se the existing static envs go to: Project -> Operate -> Environments
+  Also those envs will be seen on MRs
+
+netlify_staging:
+....
+environment:
+name: staging
+url: 'https://staging--forelock-learn-gitlab.netlify.app/'
+....
+script:
+.... - curl $CI_ENVIRONMENT_URL | grep 'GitLab'
+
+netlify_prod:
+....
+environment:
+name: production
+url: 'https://forelock-learn-gitlab.netlify.app/'
+....
+script:
+.... - curl $CI_ENVIRONMENT_URL | grep 'GitLab'
+
+## 66. Scoping variables to a specific environment
+
+It's possible to set up env vars for particular env:
+Project -> Settings -> CI/CD -> Variables
+Each var could be set up for all envs or particular env
+
+## 67. Project simulation using merge requests
+
+## 68. End-to-end tests with ​​Playwright (E2E tests)
+
+- https://playwright.dev/
+- https://playwright.dev/docs/docker
+
+e2e:
+stage: .pre
+image: mcr.microsoft.com/playwright:v1.49.1-noble
+variables:
+APP_BASE_URL: 'https://forelock-learn-gitlab.netlify.app/'
+script: - npm ci - npm run e2e
+
+## 69. Passing data between jobs with environment variables
+
+netlify_review:
+.... - echo "REVIEW_URL=$REVIEW_URL" > deploy.env
+artifacts:
+reports:
+dotenv: deploy.env
+
+e2e:
+...
+variables:
+APP_BASE_URL: $REVIEW_URL
+...
+
+## 70. Assignment: Publishing the E2E JUnit report
+
+...
+artifacts:
+when: always
+paths: - reports/
+reports:
+junit: reports/playwright-junit.xml
+
+## 72. Publishing an HTML report
+
+For now just add it to artifacts and browse them there
+...
+artifacts:
+when: always
+paths: - reports/
+
+## 73. Setting a build version
+
+src/App.jsx
+...
+
+<p className="read-the-docs">
+Application version: {import.meta.env.VITE_APP_VERSION}
+</p>
+
+.gitlab-ci.yml
+...
+variables:
+VITE_APP_VERSION: $CI_COMMIT_SHORT_SHA
+
+## 74. A critical analysis of the pipeline
+
+## 75. Why CI/CD really matters
