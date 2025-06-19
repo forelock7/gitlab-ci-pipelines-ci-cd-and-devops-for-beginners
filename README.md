@@ -630,3 +630,223 @@ VITE_APP_VERSION: $CI_COMMIT_SHORT_SHA
 ## 74. A critical analysis of the pipeline
 
 ## 75. Why CI/CD really matters
+
+# Section 4: Introduction to Docker for DevOps
+
+## 77. Section overview
+
+Created new reposytory:
+
+- https://gitlab.com/forelock/learn-gitlab-app-2
+
+Setup environments
+
+- https://docs.gitlab.com/ci/environments/
+  To se the existing static envs go to: Project -> Operate -> Environments
+
+- Add variable:
+  NETLIFY_AUTH_TOKEN
+
+## 78. Creating a Dockerfile
+
+ci/Dockerfile
+....
+FROM: node:22-alpine
+RUN npm install -g netlify-cli
+RUN apk add curl
+
+## 79. Running Docker CLI commands in GitLab
+
+...
+test_docker:
+stage: .pre
+image: docker:28
+services: - docker:28-dind
+script: - docker --version - docker version
+...
+
+image: docker:28 - This specifies the Docker image to be used for this job.
+
+- docker:28 is an official Docker image tagged with version 28.
+- It provides the necessary tools (like the Docker CLI) to interact with Docker from within the pipeline.
+
+services: - Services are additional containers that run alongside the job container. These are used for dependencies that the job needs to interact with.
+
+- docker:28-dind (Docker-in-Docker) is a service that allows Docker commands to run inside the CI/CD job's container. It spins up a Docker daemon inside the container, so you can run Docker commands like docker build, docker run, etc., within the job.
+- dind is the shorthand for Docker-in-Docker, which enables you to build and test Docker images within the pipeline.
+
+docker --version: This command prints the version of the Docker CLI installed in the container.
+docker version: This command provides detailed information about the Docker client and server (daemon) versions, as well as other Docker-related details like API version and supported features.
+
+## 80. Building a Docker image
+
+ci/Dockerfile
+FROM node:22-alpine
+RUN npm install -g netlify-cli
+RUN apk add curl
+
+.gitlab-ci.yml
+...
+build_docker_netlify:
+stage: .pre
+image: docker:28
+services: - docker:28-dind
+script: - docker version - docker build -t netlify -f ci/Dockerfile . - docker image ls
+...
+
+## 81. GitLab container registry
+
+...
+script: - docker version - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+....
+
+## 82. Pushing an image to the GitLab container registry
+
+...
+
+- docker build -t $CI_REGISTRY_IMAGE/netlify -f ci/Dockerfile .
+- docker image ls
+- docker push $CI_REGISTRY_IMAGE/netlify
+  ...
+
+## 83. Using a custom Docker image in the pipeline
+
+netlify_prod:
+image: $CI_REGISTRY_IMAGE/netlify
+
+## 84. Create a scheduled pipeline
+
+build_docker_netlify:
+stage: .pre
+image: docker:28
+rules: - if: '$CI_PIPELINE_SOURCE == "schedule"'
+...
+
+This job disappears from pipeline
+
+Go to Project/Build/Pipeline schedule
+Set to run pipeline by schedule and in this case 'build_docker_netlify' job will be executed within pipeline
+
+# Section 5: Continuous Deployment to AWS (AWS CLI, IAM, S3) with GitLab
+
+## 86. Introduction to Amazon Web Services (AWS)
+
+## 87. Amazon S3 (object storage)
+
+Create S3 bucket:
+
+- https://us-east-1.console.aws.amazon.com/s3/buckets/learn-gitlab-20250618?region=us-east-1&tab=objects&bucketType=general
+
+## 88. AWS CLI
+
+- https://gitlab.com/-/ide/project/forelock/learn-gitlab-app-2/
+
+aws_s3:
+stage: .pre
+image:
+name: amazon/aws-cli:2.27.37
+entrypoint: [""]
+script: - aws --version
+
+entrypoint - we can override entry point of image, because amazon/aws-cli returns 'aws'
+
+## 89. Managing AWS services with AWS CLI
+
+## 90. Identity management with AWS IAM
+
+Use IAM service to setup user and permissions:
+https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/home
+
+IAM -> Users -> Create user -> name 'gitlab' -> Attach policies -> AmazonS3FullAccess -> Create user
+
+Open created user -> Create 'Access key' -> Use case 'Command Line Interface (CLI)' -> Done(DO NOT CLICK TILL YOU COPY Secret Key)
+
+Access key best practices:
+
+- Never store your access key in plain text, in a code repository, or in code.
+- Disable or delete access key when no longer needed.
+- Enable least-privilege permissions.
+- Rotate access keys regularly.
+  For more details about managing access keys, see the best practices for managing AWS access keys.
+
+## 91. Managing AWS credentials in GitLab - Assignment
+
+Need to find what kind of Env Var we should use to define access key
+https://docs.aws.amazon.com/cli/latest/topic/config-vars.html
+
+## 92. Managing AWS credentials in GitLab - Assignment Solution
+
+- https://docs.aws.amazon.com/cli/latest/topic/config-vars.html#credentials
+
+Add to GitLab/Settings/CICD/Variables:
+
+AWS_ACCESS_KEY_ID=<Access Key> (Visibility, Flags-Protect variable=true, Expand variable reference=false)
+AWS_SECRET_ACCESS_KEY=<Secret access Key> (Masked and hidden, Flags-Protect variable=true, Expand variable reference=false)
+
+Now s3 bucket will be available for GitLab Ci/CD
+
+## 93. Uploading a file to S3
+
+Add var to GitLab:
+AWS_S3_BUCKET=learn-gitlab-20250618
+
+`aws_s3:
+  stage: .pre
+  image: 
+    name: amazon/aws-cli:2.27.37
+    entrypoint: [""]
+  script:
+    - aws --version
+    - echo "<h1>Hello S3!</h1>" -> index.html
+    - aws s3 cp index.html s3://$AWS_S3_BUCKET/index.html`
+
+## 94. Hosting a website on S3
+
+1. Open your s3 bucket (learn-gitlab-20250618 ) -> Properties -> Enable Static website hosting
+   Hosting type=Host a static website
+   Index document=index.html
+   Save
+   Static website hosting - http://learn-gitlab-20250618.s3-website-us-east-1.amazonaws.com/
+
+2. Open your s3 bucket (learn-gitlab-20250618 ) -> Permissions
+   Block public access (bucket settings) = Off
+
+3. Open your s3 bucket (learn-gitlab-20250618 ) -> Permissions
+   Bucket policy -> Edit
+   Add s3 service and Add action = GetObject; Add Principal=\* and Add resource
+
+`{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "Statement2",
+			"Principal": "*",
+			"Effect": "Allow",
+			"Action": [
+				"s3:GetObject"
+			],
+			"Resource": [
+				"arn:aws:s3:::learn-gitlab-20250618/*"
+			]
+		}
+	]
+}`
+
+## 95. Syncing files to S3
+
+- https://docs.aws.amazon.com/cli/latest/reference/s3/sync.html
+
+`aws_s3:
+  stage: deploy
+  image: 
+    name: amazon/aws-cli:2.27.37
+    entrypoint: [""]
+  script:
+    - aws --version
+    - aws s3 sync ./build s3://$AWS_S3_BUCKET`
+
+Now we have deployed our site on s3 bucket hosting
+
+## 96. Conclusion
+
+We made s3 hosting just for example how to work with AWS CLI and AWS S3
