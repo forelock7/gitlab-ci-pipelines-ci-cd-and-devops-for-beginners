@@ -850,3 +850,185 @@ Now we have deployed our site on s3 bucket hosting
 ## 96. Conclusion
 
 We made s3 hosting just for example how to work with AWS CLI and AWS S3
+
+# Section 6: Deploying over SSH to a remote server with GitLab (SSH, SCP, rsync)
+
+## 97. Amazon Elastic Compute Cloud (EC2)
+
+## 98. Creating an Ngnix web server
+
+Create free EC2 instance and connect to it via SSH. Execute next commands:
+
+sudo dnf install -y nginx
+sudo systemctl start nginx
+sudo systemctl enable nginx
+sudo systemctl status nginx
+
+then you can open web site by public IP or domain name using http only
+
+## 99. Testing the connection with netcat (nc)
+
+Checking that 22 port is open:
+% nc -zv 3.91.178.79 22
+Connection to 3.91.178.79 port 22 [tcp/ssh] succeeded!
+
+## 100. 25 - Testing the SSH connection from GitLab
+
+Add env var to CI/CD:
+REMOTE_DEPLOY_HOST=ec2-3-91-178-79.compute-1.amazonaws.com
+
+`ssh_deploy:
+  stage: .pre
+  image: alpine
+  script:
+    # Check if port 22 open on the server
+    - nc -zv $REMOTE_DEPLOY_HOST 22`
+
+## 101. Storing the SSH private key in GitLab
+
+`ssh_deploy:
+  stage: .pre
+  image: alpine
+  script:
+    # Check if port 22 open on the server
+    - nc -zv $REMOTE_DEPLOY_HOST 22
+    # Grand read-only permission to the private key
+    - chmod 400 $SSH_PRIVATE_KEY`
+
+## 102. Configuring the SSH connection
+
+`ssh_deploy:
+  stage: .pre
+  image: alpine
+  script:
+    # Check if port 22 open on the server
+    - nc -zv $REMOTE_DEPLOY_HOST 22
+    # Grand read-only permission to the private key
+    - chmod 400 $SSH_PRIVATE_KEY
+    # Install the OpenSSh client
+    - apk add openssh-client
+    # Start the SSH agent
+    - eval  $(ssh-agent)
+    # Add the SSH key to the agent
+    - ssh-add $SSH_PRIVATE_KEY
+    # Open SSH connection
+    - ssh -o StrictHostKeyChecking=no $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST`
+
+## 103. Verifying the SSH host keys
+
+Run on host command with public IP:
+$ ssh-keyscan 35.175.145.136
+
+Create env var (File, Visible, all flags = false) with copied 2 lines from previous command:
+SSH_KNOWN_HOSTS=35.175.145.136 ecdsa-sha2-nistp256 fbdhjsbvhjgbhrbvhjsdbnvkjndjkvhjrbvjhs bdb/nDAvzcPQaxRiFzs=
+35.175.145.136 ssh-ed25519 hncjkdshcjhdsjvhdjhvjdjsvjds/cc1Ci4ldLanKHieu8
+
+Run next command with Public DNS:
+$ ssh-keyscan ec2-35-175-145-136.compute-1.amazonaws.com
+
+Add to SSH_KNOWN_HOSTS env var 2 more lines with DNS
+ec2-35-175-145-136.compute-1.amazonaws.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMn3anhc2bemgiPipn3wKmm2XxL8u5SzXtBk7GpFde1kNSqDP32GgtUB9EJOYmkmXOTLgjZ/nDAvzcPQaxRiFzs=
+ec2-35-175-145-136.compute-1.amazonaws.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOoflBLVpHaMwx7wRQ3YtrC12R/cc1Ci4ldLanKHieu8
+
+Update ci/cd script:
+`ssh_deploy:
+  stage: .pre
+  image: alpine
+  script:
+    # Check if port 22 open on the server
+    - nc -zv $REMOTE_DEPLOY_HOST 22
+    # Grand read-only permission to the private key
+    - chmod 400 $SSH_PRIVATE_KEY
+    # Install the OpenSSh client
+    - apk add openssh-client
+    # Start the SSH agent
+    - eval  $(ssh-agent)
+    # Add the SSH key to the agent
+    - ssh-add $SSH_PRIVATE_KEY
+    # Create the SSH directory and assign the right permissions - NEW!!!!
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    # Create the known_hosts files and assign the right permissions - NEW!!!!
+    - cp $SSH_KNOWN_HOSTS ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    # Open SSH connection
+    - ssh -o StrictHostKeyChecking=no $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST`
+
+## 104. Running commands over SSH
+
+Move preparation commands to before_script:
+`ssh_deploy:
+  stage: .pre
+  image: alpine
+  before_script:
+    # Check if port 22 open on the server
+    - nc -zv $REMOTE_DEPLOY_HOST 22
+    # Grand read-only permission to the private key
+    - chmod 400 $SSH_PRIVATE_KEY
+    # Install the OpenSSh client
+    - apk add openssh-client
+    # Start the SSH agent
+    - eval  $(ssh-agent)
+    # Add the SSH key to the agent
+    - ssh-add $SSH_PRIVATE_KEY
+    # Create the SSH directory and assign the right permissions
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    # Create the known_hosts files and assign the right permissions
+    - cp $SSH_KNOWN_HOSTS ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    # Open SSH connection
+    - ssh -o StrictHostKeyChecking=no $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST
+  script:
+    # Open SSH connection + run commands
+    - ssh $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST "whoami; touch /tmp/foo.txt; ls -l /tmp"`
+
+## 105. Uploading files using SCP
+
+Prepare nginx dir on host to upload build directory(Replace root user by ec2-user as owner):
+$ ls -l /usr/share/nginx/html/
+$ sudo chown -R ec2-user:ec2-user /usr/share/nginx/html/
+$ ls -l /usr/share/nginx/html/
+
+`ssh_deploy:
+  stage: deploy
+  ...
+  script:
+    # Open SSH connection + run commands
+    - ssh $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST "whoami; touch /tmp/foo.txt; ls -l /tmp"
+    # Copy all the directories and files from the build directory (but not build itself) to the remote destination
+    - scp -r build/* $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST:/usr/share/nginx/html/`
+
+## 106. Uploading fiels using rsync
+
+rsync is better than scp. It allows to sync content in dir between local and remote host.
+
+` ....  
+  before_script:
+    ...
+    # Install the OpenSSh client, rsync
+    - apk add openssh-client rsync
+    ...
+  script:
+    ...
+    # Copy all the directories and files from the build directory (but not build itself) to the remote destination
+    - rsync -rvz --delete build/ $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST:/usr/share/nginx/html/`
+
+## 107. Running a deployment script
+
+Use deploy.sh script:
+./deploy.sh
+
+`ssh_deploy:
+  stage: deploy
+  image: alpine
+  before_script:
+...
+    # Install the OpenSSh client, rsync, zip
+    - apk add openssh-client rsync zip
+...
+  script:
+....
+    - zip -r build.zip build/
+    - scp build.zip ci/deploy.sh $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST:~/deploy
+    - ssh $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST "cd ~/deploy; chmod +x deploy.sh; ./deploy.sh"`
