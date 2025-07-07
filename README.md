@@ -1032,3 +1032,268 @@ Use deploy.sh script:
     - zip -r build.zip build/
     - scp build.zip ci/deploy.sh $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST:~/deploy
     - ssh $REMOTE_DEPLOY_USER@$REMOTE_DEPLOY_HOST "cd ~/deploy; chmod +x deploy.sh; ./deploy.sh"`
+
+# Section 7: Continuous Deployment to Amazon Elastic Container Service (ECS, ECR, IAM)
+
+## 109. Introduction to Amazon Elastic Container Service (Amazon ECS)
+
+1. Create cluster
+2. Create task definition
+3. Run the task definition
+
+## 110. ECS Infrastructure / Launch modes (Fargate vs EC2)
+
+https://us-east-1.console.aws.amazon.com/ecs/v2/getStarted?region=us-east-1
+
+It's paid service!!!
+Here is calculator:
+
+- https://calculator.aws/#/createCalculator/Fargate
+
+## 111. Creating a cluster in ECS
+
+Cluster name = LearnGitLabApp-Cluster-Prod (Name of application, 'Cluster' and for which env)
+Default namespace = LearnGitLabApp-Cluster-Prod
+Infrastructure = AWS Fargate (serverless)
+Create and wait.
+
+If there are no any tasks running, it's not charged.
+
+## 112. Creating a task definition
+
+Create task definition
+Create using JSON
+Hover over each property and read docs.
+
+Use nginx:1.29.0-alpine docker container
+https://hub.docker.com/layers/library/nginx/1.29.0-alpine/images/sha256-2598e977ffd4c4cac6fe01ccab90e30186baa34ccea11a2f0e71938571f19da1
+
+https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html?icmpid=docs_ecs_hp-taskdef-create-json
+
+`{
+"requiresCompatibilities": [
+"FARGATE"
+],
+"family": "LearnGitLabApp-TD-Prod",
+"containerDefinitions": [
+{
+"name": "learngitlabapp",
+"image": "nginx:1.29.0-alpine",
+"portMappings": [
+{
+"name": "nginx-80-tcp",
+"containerPort": 80,
+"hostPort": 80,
+"protocol": "tcp",
+"appProtocol": "http"
+}
+],
+"essential": true
+}
+],
+"volumes": [],
+"networkMode": "awsvpc",
+"memory": "512",
+"cpu": "256",
+"executionRoleArn": ""
+}`
+
+## 113. Creating a deployment on ECS
+
+Open created cluster and got to Services;
+Create Service
+Task definition family = LearnGitLabApp-TD-Prod
+Service name = LearnGitLabApp-Service-Prod
+Compute options = Capacity provider strategy
+Desired tasks = 1
+Networking
+Public IP = On
+Desired tasks = 0 (TO AVOID RECREATION OF TASKS AFTER STOPPING)
+
+Go to Clusters - Services - Task
+Find Public IP
+
+In task update Security rule:
+Task - Networking - Security group
+Edit Inbound rules - Add rule: Type=HTTP, Source=Anywhere-IPv4
+
+Open Public IP and see NGINX welcome page
+
+STOP task not to charged!!!
+
+## 114. Updating the task definition using AWS CLI
+
+- https://docs.aws.amazon.com/cli/latest/reference/ecs/register-task-definition.html
+
+Create new revission via UI or via GitLab CI json. Let's do it via GitLab:
+
+Add new var to CI/CD:
+AWS_DEFAULT_REGION=us-east-1
+
+Add permissions for gitlab user to work with ecs
+IAM -> Users -> Add permission -> Attach policies directly -> Search for 'ecs' -> add AmazonECS_FullAccess
+
+Update image version in JSON:
+aws/td-prod.json
+`....
+"containerDefinitions": [
+{
+"name": "learngitlabapp",
+"image": "nginx:1.29.0-alpine",
+...`
+
+Add GotLab job:
+...
+`ecs_deploy:
+stage: .pre
+image:
+name: amazon/aws-cli:2.27.47
+entrypoint: [""]
+script: - aws --version - aws ecs register-task-definition --cli-input-json file://aws/td-prod.json`
+
+Note: This will only create new TD version, but don't replace running task in service. See next section.
+
+## 115. Updating the service using AWS CLI
+
+- https://docs.aws.amazon.com/cli/latest/reference/ecs/update-service.html
+
+Update TD to tghe latest version
+
+UI: Open cluster -> open service -> Update service -> Select new revision of TD
+
+CLI:
+`...
+ecs_deploy:
+  stage: .pre
+  image:
+    name: amazon/aws-cli:2.27.47
+    entrypoint: [""]
+  script:
+    - aws --version
+    - aws ecs register-task-definition --cli-input-json file://aws/td-prod.json
+    - aws ecs update-service --cluster LearnGitLabApp-Cluster-Prod --service LearnGitLabApp-Service-Prod --task-definition LearnGitLabApp-TD-Prod
+...`
+
+New task appears and start running, till old task also run.
+
+## 116. wait command
+
+- https://docs.aws.amazon.com/cli/latest/reference/ecs/wait/
+- https://docs.aws.amazon.com/cli/latest/reference/ecs/wait/services-stable.html
+
+To wait until task definition is updated need to wait service is ready
+
+`ecs_deploy:
+  stage: .pre
+  image:
+    name: amazon/aws-cli:2.27.47
+    entrypoint: [""]
+  script:
+    - aws --version
+    - aws ecs register-task-definition --cli-input-json file://aws/td-prod.json
+    - aws ecs update-service --cluster LearnGitLabApp-Cluster-Prod --service LearnGitLabApp-Service-Prod --task-definition LearnGitLabApp-TD-Prod
+    - aws ecs wait services-stable --cluster LearnGitLabApp-Cluster-Prod --services LearnGitLabApp-Service-Prod`
+
+## 117. Steps needed to deploy an application to ECS
+
+## 118. Creating the Dockerfile
+
+Create in root project 'Dockerfile'
+`FROM nginx:1.29.0-alpine
+COPY build /usr/share/nginx/html`
+
+## 119. Building the Docker image
+
+`build_docker_image:
+  image:
+    name: amazon/aws-cli:2.27.47
+    entrypoint: [""]
+  stage: package
+  services:
+    - docker:28-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375/
+  before_script:
+    - amazon-linux-extras install docker
+  script:
+    - aws --version
+    - docker version
+    - docker build -t learngitlabapp .`
+
+## 120. Amazon ECR - Docker container registry
+
+To use earlier created image need to save it
+https://us-east-1.console.aws.amazon.com/ecr/home?region=us-east-1
+
+Create new private repository with name 'learngitlabapp'.
+Add CI/CD var:
+DOCKER_REGISTRY=289669703852.dkr.ecr.us-east-1.amazonaws.com
+
+Add permissions for aws 'gitlab' user to ECR:
+IAM -> Users -> gitlab -> Add permissions -> Attach policies directly -> Search for 'AmazonEC2ContainerRegistryFullAccess'
+
+`build_docker_image:
+  image:
+    name: amazon/aws-cli:2.27.47
+    entrypoint: [""]
+  stage: package
+  services:
+    - docker:28-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375/
+  before_script:
+    - amazon-linux-extras install docker
+  script:
+    - aws --version
+    - docker version
+    - docker build -t $DOCKER_REGISTRY/learngitlabapp:$VITE_APP_VERSION .
+    - aws ecr get-login-password | docker login --username AWS --password-stdin $DOCKER_REGISTRY
+    - docker push $DOCKER_REGISTRY/learngitlabapp:$VITE_APP_VERSION`
+
+## 121. Using an ECR Docker image in the task definition
+
+1. Go to AWS ECS service
+2. Task definitions
+3. Open task definition
+4. Create new revision
+5. Past Image name by image from our repository, lets leave it without tag for now: 289669703852.dkr.ecr.us-east-1.amazonaws.com/learngitlabapp
+6. add new role to 'Task execution role' field
+7. Click 'Create'
+8. Go to JSON tab and copy from there for our CI/CD scripts: "executionRoleArn": "arn:aws:iam::289669703852:role/ecsTaskExecutionRole",
+9. Modify file aws/td-prod.json in CI/CD scripts of project:
+   `{
+.....
+    "containerDefinitions": [
+        {
+            "name": "learngitlabapp",
+            "image": "289669703852.dkr.ecr.us-east-1.amazonaws.com/learngitlabapp",
+            "portMappings": [
+.....
+    "executionRoleArn": "arn:aws:iam::289669703852:role/ecsTaskExecutionRole"
+}`
+10. Fix CI/CD scripts to create and push image with 'latest' tag
+
+`build_docker_image:
+  image:
+    name: amazon/aws-cli:2.27.47
+    entrypoint: [""]
+  stage: package
+  services:
+    - docker:28-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375/
+  before_script:
+    - amazon-linux-extras install docker
+  script:
+    - aws --version
+    - docker version
+    - docker build -t $DOCKER_REGISTRY/learngitlabapp:$VITE_APP_VERSION -t $DOCKER_REGISTRY/learngitlabapp .
+    - aws ecr get-login-password | docker login --username AWS --password-stdin $DOCKER_REGISTRY
+    - docker push --all-tags $DOCKER_REGISTRY/learngitlabapp`
+
+## 122. Section summary & conclusion
+
+Delete:
+
+- ECR repository
+- ECS cluster
