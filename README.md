@@ -1232,7 +1232,8 @@ DOCKER_REGISTRY=289669703852.dkr.ecr.us-east-1.amazonaws.com
 Add permissions for aws 'gitlab' user to ECR:
 IAM -> Users -> gitlab -> Add permissions -> Attach policies directly -> Search for 'AmazonEC2ContainerRegistryFullAccess'
 
-`build_docker_image:
+```
+build_docker_image:
   image:
     name: amazon/aws-cli:2.27.47
     entrypoint: [""]
@@ -1248,7 +1249,8 @@ IAM -> Users -> gitlab -> Add permissions -> Attach policies directly -> Search 
     - docker version
     - docker build -t $DOCKER_REGISTRY/learngitlabapp:$VITE_APP_VERSION .
     - aws ecr get-login-password | docker login --username AWS --password-stdin $DOCKER_REGISTRY
-    - docker push $DOCKER_REGISTRY/learngitlabapp:$VITE_APP_VERSION`
+    - docker push $DOCKER_REGISTRY/learngitlabapp:$VITE_APP_VERSION
+```
 
 ## 121. Using an ECR Docker image in the task definition
 
@@ -1261,16 +1263,17 @@ IAM -> Users -> gitlab -> Add permissions -> Attach policies directly -> Search 
 7. Click 'Create'
 8. Go to JSON tab and copy from there for our CI/CD scripts: "executionRoleArn": "arn:aws:iam::289669703852:role/ecsTaskExecutionRole",
 9. Modify file aws/td-prod.json in CI/CD scripts of project:
-   `{
-.....
+   ````{
+   .....
     "containerDefinitions": [
         {
             "name": "learngitlabapp",
             "image": "289669703852.dkr.ecr.us-east-1.amazonaws.com/learngitlabapp",
             "portMappings": [
-.....
+   .....
     "executionRoleArn": "arn:aws:iam::289669703852:role/ecsTaskExecutionRole"
-}`
+   }```
+   ````
 10. Fix CI/CD scripts to create and push image with 'latest' tag
 
 `build_docker_image:
@@ -1297,3 +1300,361 @@ Delete:
 
 - ECR repository
 - ECS cluster
+
+# Section 8: Advanced GitLab CI/CD features
+
+## 123. Section overview
+
+## 124. Retrying failed jobs automatically (retry keyword)
+
+- https://docs.gitlab.com/ci/yaml/#retry
+
+```
+test_job:
+  image: ubuntu
+  stage: test
+  script:
+    - echo "Testing ..."
+    - if (( RANDOM % 2 == 0 )); then exit 1; else exit 0; fi
+  retry: 2
+```
+
+## 125. Allowing failures (allow_failure keyword)
+
+- https://docs.gitlab.com/ci/yaml/#allow_failure
+
+```
+some_job:
+  image: ubuntu
+  stage: test
+  script:
+    - echo "Testing ..."
+    - if (( RANDOM % 2 == 0 )); then exit 123; else exit 1; fi
+  allow_failure:
+    exit_codes:
+      - 123
+```
+
+## 126. YAML anchors and aliases
+
+&something - anchor to define something
+\*something - alias to use something
+
+```
+.dependancies: &dependancies
+
+- echo "Installing dependencies"
+
+.job_teplate: &my_job_template
+image: alpine
+before_script:
+
+- echo "Installing dependencies"
+
+job_1_new:
+<<: \*my_job_template
+script:
+
+- echo "Job 1"
+
+job_2_new:
+<<: \*my_job_template
+script:
+
+- echo "Job 2"
+
+job_1:
+image: alpine
+before_script: \*dependancies
+script:
+
+- echo "Job 1"
+
+job_2:
+image: alpine
+before_script: \*dependancies
+script:
+
+- echo "Job 2"
+```
+
+## 127. Job templates with YAML anchors and aliases (practical example)
+
+```
+stages:
+  - build
+  - deploy_staging
+  - deploy_prod
+
+build_file:
+  image: alpine
+  stage: build
+  script:
+    - echo "Hello" > build.txt
+  artifacts:
+    paths:
+      - build.txt
+
+.deploy_template: &deploy_template
+  image: alpine
+  stage: deploy_staging
+  environment:
+    name: staging
+  variables: &deploy_variables
+    APP_VERSION: $CI_PIPELINE_IID
+    DB_NAME: "staging-db"
+  script:
+    - echo "Deploying app version $APP_VERSION on $CI_ENVIRONMENT_NAME ..."
+    - if [[ "$CI_ENVIRONMENT_NAME" == "production" ]]; then echo "This should run ONLY on prod."; fi
+
+mock_deploy_prod_new:
+  <<: *deploy_template
+  stage: deploy_prod
+  environment:
+    name: production
+  variables:
+    <<: *deploy_variables
+    DB_NAME: "prod-db"
+
+mock_deploy_staging:
+  image: alpine
+  stage: deploy_staging
+  environment:
+    name: staging
+  variables:
+    APP_VERSION: $CI_PIPELINE_IID
+    DB_NAME: "staging-db"
+  script:
+    - echo "Deploying app version $APP_VERSION on $CI_ENVIRONMENT_NAME ..."
+
+mock_deploy_prod:
+  image: alpine
+  stage: deploy_prod
+  environment:
+    name: production
+  variables:
+    APP_VERSION: $CI_PIPELINE_IID
+    DB_NAME: "prod-db"
+  script:
+    - echo "Deploying app version $APP_VERSION on $CI_ENVIRONMENT_NAME ..."
+    - echo "This should run ONLY on prod."
+```
+
+## 128. Reusing configuration with extends:
+
+- https://docs.gitlab.com/ci/yaml/#extends
+
+```
+---
+stages:
+- ".pre"
+- build
+- deploy_staging
+- deploy_prod
+- ".post"
+build_file:
+  image: alpine
+  stage: build
+  script:
+  - echo "Hello" > build.txt
+  artifacts:
+    paths:
+    - build.txt
+".deploy_script":
+  script:
+  - echo "Deploying app version $APP_VERSION on $CI_ENVIRONMENT_NAME ..."
+  - echo "This should run ONLY on prod."
+".deploy_template":
+  image: alpine
+  stage: deploy_prod
+  environment:
+    name: production
+  variables:
+    APP_VERSION: "$CI_PIPELINE_IID"
+    DB_NAME: prod-db
+  script:
+  - echo "Deploying app version $APP_VERSION on $CI_ENVIRONMENT_NAME ..."
+  - echo "This should run ONLY on prod."
+mock_deploy_staging_new:
+  image: alpine
+  stage: deploy_staging
+  environment:
+    name: staging
+  variables:
+    APP_VERSION: "$CI_PIPELINE_IID"
+    DB_NAME: staging-db
+  script:
+  - echo "Deploying app version $APP_VERSION on $CI_ENVIRONMENT_NAME ..."
+  - echo "This should run ONLY on prod."
+  extends:
+  - ".deploy_template"
+  - ".deploy_script"
+mock_deploy_staging:
+  image: alpine
+  stage: deploy_staging
+  environment:
+    name: staging
+  variables:
+    APP_VERSION: "$CI_PIPELINE_IID"
+    DB_NAME: staging-db
+  script:
+  - echo "Deploying app version $APP_VERSION on $CI_ENVIRONMENT_NAME ..."
+mock_deploy_prod:
+  image: alpine
+  stage: deploy_prod
+  environment:
+    name: production
+  variables:
+    APP_VERSION: "$CI_PIPELINE_IID"
+    DB_NAME: prod-db
+  script:
+  - echo "Deploying app version $APP_VERSION on $CI_ENVIRONMENT_NAME ..."
+  - echo "This should run ONLY on prod."
+
+```
+
+## 129. Import YAML configuration from other files (includes keyword)
+
+Docs:
+
+- https://docs.gitlab.com/ci/yaml/#include
+- https://docs.gitlab.com/ci/yaml/includes/
+
+Project:
+
+- https://gitlab.com/forelock/deploy-template-extends
+
+To copy link to the '.yml' file from GitLab: open that file, click 'Open raw' and copy link:
+
+- https://gitlab.com/forelock/gitlab-templates/-/raw/main/.deploy-template.yml?ref_type=heads
+
+Used template should be from public project
+
+```
+include:
+- local: 'ci/build.yml'
+- remote: 'https://gitlab.com/forelock/gitlab-templates/-/raw/main/.deploy-template.yml'
+```
+
+or
+Used template could be from private project
+
+```
+include:
+- local: 'ci/build.yml'
+- project: 'forelock/gitlab-templates'
+  file:
+    - '.deploy-template.yml'
+```
+
+## 130. CI/CD Components & Catalog
+
+Docs:
+
+- https://docs.gitlab.com/ci/components/
+
+Project:
+
+- https://gitlab.com/forelock/gitlab-components
+
+Open pipeline editor and click 'CI/CD Catalog'. Choose:
+
+- https://gitlab.com/explore/catalog/components/code-quality
+
+```
+include:
+  - component: $CI_SERVER_FQDN/components/code-quality/code-quality@1.0.5
+    inputs:
+      stage: build
+```
+
+## 131. Writing multi-line scripts
+
+- https://platform.openai.com/docs/quickstart?api-mode=chat&lang=curl
+
+We can run script as file inside pipeline or multiple lines
+
+```
+  script:
+    - echo "Calling the OpenAI API ..."
+    - chmod +x script.sh
+    - ./script.sh
+    - |
+      # Check if OPENAI_API_KEY is set and not empty
+      if [ -z "$OPENAI_API_KEY" ]; then
+          echo "Error: OPENAI_API_KEY is not set or is empty."
+          exit 1
+      else
+          echo "Success: OPENAI_API_KEY is set."
+      fi
+    - |
+      curl "https://api.openai.com/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $OPENAI_API_KEY" \
+      -d '{
+          "model": "gpt-4o",
+          "messages": [
+              {
+                  "role": "user",
+                  "content": "Write a one-sentence bedtime story about a unicorn."
+              }
+          ]
+      }'
+```
+
+## 132. Starting a server / background process within a job
+
+- https://www.npmjs.com/package/serve
+
+Use '&' to run command in background. Probably to wait the starting something is finished use 'sleep'
+
+```
+test_website:
+  stage: test
+  image: node:22-alpine
+  before_script:
+    - apk add curl
+    - npm install -g serve
+  script:
+    - test -f build/index.html
+    - serve build/ &
+    - sleep 3
+    - curl http://localhost:3000 | grep "My website"
+```
+
+## 133. GitLab Pages
+
+Docs:
+
+- https://docs.gitlab.com/user/project/pages/
+
+```
+api-tests:
+  image: node:22-alpine
+  stage: test
+  before_script:
+    - npm install -g newman newman-reporter-htmlextra
+  script:
+    - newman run collection.json -r htmlextra --reporter-htmlextra-export ./newman/index.html
+  pages:
+    publish: newman
+```
+
+## 134. Choosing the GitLab Runner using tags
+
+Docs:
+
+- https://docs.gitlab.com/ci/runners/hosted_runners/linux/
+- https://docs.gitlab.com/ci/yaml/#tags
+
+To look at available runners go to 'Settings' - 'CI/CD' - 'Runners'
+
+```
+test_arm64:
+  image: arm64v8/ubuntu:latest
+  tags:
+    - saas-linux-small-arm64
+  script:
+    - echo "Running on arm64 architecture"
+    - uname -m
+```
