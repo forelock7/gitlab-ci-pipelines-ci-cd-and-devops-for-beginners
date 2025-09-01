@@ -1658,3 +1658,560 @@ test_arm64:
     - echo "Running on arm64 architecture"
     - uname -m
 ```
+
+# Section 9: Pipeline performance optimizations
+
+## 135. Skip cloning the Git repository (GIT_STRATEGY)
+
+Docs:
+
+- https://gitlab.com/gitlab-com/www-gitlab-com
+- https://docs.gitlab.com/ci/pipelines/settings/
+- https://docs.gitlab.com/ci/runners/configure_runners/#git-strategy
+
+```
+job1:
+  image: alpine
+  script:
+    - ls -la
+    - echo "Job 1"
+
+job2:
+  image: alpine
+  variables:
+    GIT_STRATEGY: none - do not fetch or clone repo on agent
+  script:
+    - ls -la
+    - echo "Job 2"
+
+```
+
+Git strategy
+The GIT_STRATEGY variable configures how the build directory is prepared and
+repository content is fetched. You can set this variable globally or per job
+in the variables section.
+
+variables:
+GIT_STRATEGY: clone
+
+Possible values are clone, fetch, none, and empty. If you do not specify a value,
+jobs use the project's pipeline setting.
+
+## 136. Disabling artifact download from previous stages (dependencies keyword)
+
+Docs:
+
+- https://docs.gitlab.com/ci/yaml/#artifacts
+
+```
+default:
+  image: alpine
+
+stages:
+  - build
+  - test
+  - deploy
+
+build_app:
+  stage: build
+  script:
+    - echo "Building the application ..."
+    - dd if=/dev/zero of=myapp bs=1M count=100
+  artifacts:
+    paths:
+      - myapp
+
+release_notes:
+  stage: build
+  script:
+    - echo "Creating the release notes"
+    - echo "RELEASE NOTES" > release-notes.txt
+  artifacts:
+    paths:
+      - release-notes.txt
+
+test_app:
+  stage: test
+  script:
+    - echo "Testing the app"
+    - test -f myapp
+
+test_release_notes:
+  stage: test
+  dependencies:
+    - release_notes   ------- download only artifacts from 'release_notes' job!!!!!
+  script:
+    - echo "Testing the release notes"
+    - test -f release-notes.txt
+
+unit_tests:
+  stage: test
+  dependencies: []  ------- do not download any artifacts from previous jobs!!!!
+  script:
+    - echo "Running the unit tests"
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying to production"
+
+```
+
+## 137. Stageless pipelines: running jobs out of order (needs keyword)
+
+Docs:
+
+- https://docs.gitlab.com/ci/yaml/#needs
+
+```
+default:
+  image: alpine
+
+stages:
+  - build
+  - test
+  - deploy
+
+build_app:
+  stage: build
+  script:
+    - echo "Building the application"
+
+release_notes:
+  stage: build
+  script:
+    - echo "Creating the release notes"
+    - sleep 30
+
+test_app:
+  stage: test
+  script:
+    - echo "Testing the app"
+  needs:
+    - build_app
+
+test_stuff:
+  stage: test
+  script:
+    - echo "Testing the the app and the release notes"
+
+unit_tests:
+  stage: test
+  script:
+    - echo "Running the unit tests"
+  needs: []
+
+linter:
+  stage: test
+  script:
+    - echo "Running the linter"
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying to production"
+  needs:
+    - test_app
+    - unit_tests
+```
+
+## 138. Using the needs keyword with artifacts
+
+Docs:
+
+- https://docs.gitlab.com/ci/yaml/#needsartifacts
+
+Artifacts are available for all following jobs. If we use 'needs', only artifacts from jobs specified in 'needs'.
+There is an options that disabled artifacts from jobs in 'needs'
+
+```
+default:
+  image: alpine
+
+stages:
+  - build
+  - test
+  - deploy
+
+build_app:
+  stage: build
+  script:
+    - echo "Building the application"
+    - echo "APP" > myapp
+  artifacts:
+    paths:
+      - myapp
+
+release_notes:
+  stage: build
+  script:
+    - echo "Creating the release notes"
+    - sleep 30
+
+test_app:
+  stage: test
+  script:
+    - echo "Testing the app"
+    - test -f myapp
+  needs:
+    - build_app
+
+test_stuff:
+  stage: test
+  script:
+    - echo "Testing the the app and the release notes"
+
+unit_tests:
+  stage: test
+  script:
+    - echo "Running the unit tests"
+    - echo "Report" > report.txt
+  needs: []
+  artifacts:
+    paths:
+      - report.txt
+
+linter:
+  stage: test
+  script:
+    - echo "Running the linter"
+  needs: []
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying to production"
+    - cp myapp /tmp/myapp
+  needs:
+    - job: build_app
+    - job: test_app
+    - job: unit_tests
+      artifacts: false
+```
+
+## 139. Caches
+
+We can cache some files to make it available for all jobs. So there is no need to download it for each as we have using artifacts.
+
+Test project:
+
+- https://gitlab.com/gitlab-course-public/gitlab-banner
+
+Docs:
+
+- https://docs.gitlab.com/ci/yaml/#cache
+
+```
+default:
+  image: node:22-alpine
+  cache:
+    key: my-cache
+    paths:
+      - node_modules/
+
+create_banner:
+  stage: build
+  script:
+    - npm ci
+    - node script.js "GitLab CI/CD" >> banner.txt
+    - cat banner.txt
+  artifacts:
+    paths:
+      - banner.txt
+
+unit_tests:
+  stage: test
+  script:
+    - npm ci
+    - npm test
+
+check_artifact:
+  image: alpine
+  stage: test
+  script:
+    - test -s banner.txt && echo "banner.txt is not empty." || echo "banner.txt is empty."
+
+deploy:
+  image: alpine
+  stage: deploy
+  script:
+    - echo "Mock deployment ..."
+```
+
+## 140. Caches vs Artifacts
+
+Docs:
+
+- https://docs.gitlab.com/ci/caching/#cache-vs-artifacts
+
+Use cache for dependencies, like packages you download from the internet. Cache is stored where GitLab Runner is installed and uploaded to S3 if distributed cache is enabled.
+
+Use artifacts to pass intermediate build results between stages. Artifacts are generated by a job, stored in GitLab, and can be downloaded.
+
+Both artifacts and caches define their paths relative to the project directory, and can’t link to files outside it.
+
+Cache
+Define cache per job by using the cache keyword. Otherwise it is disabled.
+Subsequent pipelines can use the cache.
+Subsequent jobs in the same pipeline can use the cache, if the dependencies are identical.
+Different projects cannot share the cache.
+By default, protected and non-protected branches do not share the cache. However, you can change this behavior.
+Artifacts
+Define artifacts per job.
+Subsequent jobs in later stages of the same pipeline can use artifacts.
+Artifacts expire after 30 days by default. You can define a custom expiration time.
+The latest artifacts do not expire if keep latest artifacts is enabled.
+Use dependencies to control which jobs fetch the artifacts.
+
+## 141. Dynamic cache keys (cache configuration)
+
+- https://docs.gitlab.com/ci/variables/predefined_variables/
+
+```
+default:
+  image: node:22-alpine
+  cache:
+    key: $CI_COMMIT_REF_NAME
+    paths:
+      - node_modules/
+
+create_banner:
+  stage: build
+  script:
+    - npm ci
+    - node script.js "GitLab CI/CD" >> banner.txt
+    - cat banner.txt
+  artifacts:
+    paths:
+      - banner.txt
+
+unit_tests:
+  stage: test
+  script:
+    - npm ci
+    - npm test
+
+check_artifact:
+  image: alpine
+  stage: test
+  script:
+    - test -s banner.txt && echo "banner.txt is not empty." || echo "banner.txt is empty."
+
+deploy:
+  image: alpine
+  stage: deploy
+  script:
+    - echo "Mock deployment ..."
+```
+
+## 142. Cache key from file (cache configuration)
+
+Use the cache:key:files keyword to generate a new key when files matching either of the defined paths or patterns change. cache:key:files lets you reuse some caches, and rebuild them less often, which speeds up subsequent pipeline runs.
+
+- https://docs.gitlab.com/ci/yaml/#cachekeyfiles
+
+```
+default:
+  image: node:22-alpine
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules/
+
+create_banner:
+  stage: build
+  script:
+    - npm ci
+    - node script.js "GitLab CI/CD" >> banner.txt
+    - cat banner.txt
+  artifacts:
+    paths:
+      - banner.txt
+
+unit_tests:
+  stage: test
+  script:
+    - npm ci
+    - npm test
+
+check_artifact:
+  image: alpine
+  stage: test
+  script:
+    - test -s banner.txt && echo "banner.txt is not empty." || echo "banner.txt is empty."
+
+deploy:
+  image: alpine
+  stage: deploy
+  script:
+    - echo "Mock deployment ..."
+```
+
+## 143. Disabling cache (cache configuration)
+
+cache: [] - just disable cache
+
+```
+default:
+  image: node:22-alpine
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules/
+
+create_banner:
+  stage: build
+  script:
+    - npm ci
+    - node script.js "GitLab CI/CD" >> banner.txt
+    - cat banner.txt
+  artifacts:
+    paths:
+      - banner.txt
+
+unit_tests:
+  stage: test
+  script:
+    - npm ci
+    - npm test
+
+check_artifact:
+  image: alpine
+  stage: test
+  cache: []
+  script:
+    - test -s banner.txt && echo "banner.txt is not empty." || echo "banner.txt is empty."
+
+deploy:
+  image: alpine
+  stage: deploy
+  cache: []
+  script:
+    - echo "Mock deployment ..."
+```
+
+## 144. Cache policy (cache configuration)
+
+To change the upload and download behavior of a cache, use the cache:policy keyword. By default, the job downloads the cache when the job starts, and uploads changes to the cache when the job ends. This caching style is the pull-push policy (default).
+To set a job to only download the cache when the job starts, but never upload changes when the job finishes, use cache:policy:pull.
+To set a job to only upload a cache when the job finishes, but never download the cache when the job starts, use cache:policy:push.
+Use the pull policy when you have many jobs executing in parallel that use the same cache. This policy speeds up job execution and reduces load on the cache server. You can use a job with the push policy to build the cache.
+Must be used with cache: paths, or nothing is cached.
+
+- https://docs.gitlab.com/ci/yaml/#cachepolicy
+
+```
+default:
+  image: node:22-alpine
+  cache: &global_cache
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules/
+
+create_banner:
+  stage: build
+  script:
+    - npm ci
+    - node script.js "GitLab CI/CD" >> banner.txt
+    - cat banner.txt
+  artifacts:
+    paths:
+      - banner.txt
+
+unit_tests:
+  stage: test
+  # Inherit global cache settings
+  cache:
+    <<: *global_cache
+    # Override the policy
+    policy: pull
+  script:
+    - npm ci
+    - npm test
+
+check_artifact:
+  image: alpine
+  stage: test
+  cache: []
+  script:
+    - test -s banner.txt && echo "banner.txt is not empty." || echo "banner.txt is empty."
+
+deploy:
+  image: alpine
+  stage: deploy
+  cache: []
+  script:
+    - echo "Mock deployment ..."
+```
+
+## 145. Dynamic cache policy (cache configuration)
+
+```
+default:
+  image: node:22-alpine
+  cache: &global_cache
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules/
+
+create_banner:
+  stage: build
+  script:
+    - npm ci
+    - node script.js "GitLab CI/CD" >> banner.txt
+    - cat banner.txt
+  rules:
+    - changes:
+        - package-lock.json
+      variables:
+        CACHE_POLICY: pull-push
+    - when: always
+      variables:
+        CACHE_POLICY: pull
+  # Inherit global cache settings
+  cache:
+    <<: *global_cache
+    # Override the policy
+    policy: $CACHE_POLICY
+  artifacts:
+    paths:
+      - banner.txt
+
+unit_tests:
+  stage: test
+  # Inherit global cache settings
+  cache:
+    <<: *global_cache
+    # Override the policy
+    policy: pull
+  script:
+    - npm ci
+    - npm test
+
+check_artifact:
+  image: alpine
+  stage: test
+  cache: []
+  script:
+    - test -s banner.txt && echo "banner.txt is not empty." || echo "banner.txt is empty."
+
+deploy:
+  image: alpine
+  stage: deploy
+  cache: []
+  script:
+    - echo "Mock deployment ..."
+```
+
+## 146. Troubleshooting the cache configuration
+
+Cache could be cleared in UI:
+Project -> Build -> Pipelines -> 'Clear runner caches'
