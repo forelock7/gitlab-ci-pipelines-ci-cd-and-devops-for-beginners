@@ -85,6 +85,7 @@ Example: sh"exit 1"
 
 - Git for GitLab (Beginner's FULL COURSE)[https://www.youtube.com/watch?v=4lxvVj7wlZw]
 
+```
 git --version
 mkdir git-study
 cd git-study
@@ -99,12 +100,12 @@ git commit -m "My first commit"
 git status
 git add . --- add to stage all files
 
-Staging is usefull for check what ind of files we want to commit
+# Staging is usefull for check what ind of files we want to commit
 git reset HEAD readme.md --- unstage readme.md file only to omit commiting it
 git log --- logging commits history
 git log --patch --- with more information
 
-Git doesn't track folders. If you need to track it add file inside ".gitkeep"
+# Git doesn't track folders. If you need to track it add file inside ".gitkeep"
 touch temp/.gitkeep
 git status
 
@@ -116,13 +117,14 @@ git merge feature/new-table --- if there are no any changes in master, merge aut
 git log
 git branch
 
-If if there are some changes in master, merge will be executed with other startegy and require merge commit
+# If if there are some changes in master, merge will be executed with other startegy and require merge commit
 
 git checkout bugfix/table-2
 git rebase master
 
 git merge --abort
 git rebase --abort
+```
 
 Resolve conflick will create new commit as a result.
 
@@ -140,16 +142,20 @@ My forked project: https://gitlab.com/forelock/learn-gitlab-app
 - https://www.youtube.com/watch?v=Vmt0V6a3ppE
 - https://www.youtube.com/watch?v=_qDJ0W1wR5w
 
+```
 npm i
 npm run build --- to build(bundle) the project
 npm install -g serve --- install globally simple web-server to test project locally
 serve -s build/
+```
 
 ## 24. Using Docker as a build environment
 
+```
 test_npm:
-image: node:22
-script: - node --version - npm --version
+  image: node:22
+  script: - node --version - npm --version
+```
 
 ## 25. Choosing an appropriate Docker image
 
@@ -166,14 +172,19 @@ Time of job execution has been reduced in TWICE (from 30sec to 15sec) after usag
 
 Use `npm ci` instead of `npm install`. It's optimized for ci and uses dependencies from `package-lock.json`, but not `package.json`.
 
+```
 stages:
-
-- build
+  - build
 
 test_npm:
-image: node:22-alpine
-stage: build
-script: - node --version - npm --version - npm ci - npm run build
+  image: node:22-alpine
+  stage: build
+  script:
+    - node --version
+    - npm --version
+    - npm ci
+    - npm run build
+```
 
 ## 28. Assignment: Publishing build artifacts
 
@@ -182,6 +193,7 @@ script: - node --version - npm --version - npm ci - npm run build
 
 ## 29. Assignment: Publishing build artifacts
 
+```
 stages:
 
 - build
@@ -192,6 +204,7 @@ stage: build
 script: - node --version - npm --version - npm ci - npm run build
 artifacts:
 paths: - build/
+```
 
 ## 30. Revisiting the GitLab CI/CD architecture
 
@@ -205,6 +218,7 @@ One docker container is used ONLY for one JOB
 
 ## 32. Assignment: Adding a test stage - Solution
 
+```
 stages:
 
 - build
@@ -217,9 +231,11 @@ test_artifact:
 image: alpine
 stage: test
 script: - echo "Testing" - test -f "build/index.html"
+```
 
 ## 33. Running unit tests
 
+```
 stages:
 
 - build
@@ -232,9 +248,11 @@ unit_tests:
 image: node:22-alpine
 stage: unit
 script: - npm ci - npm test
+```
 
 ## 34. Running jobs in parallel
 
+```
 stages:
 
 - build
@@ -250,11 +268,13 @@ unit_tests:
 image: node:22-alpine
 stage: test
 ...
+```
 
 ## 35. Default pipeline stages (.pre, build, test, deploy .post)
 
 GitLab define next stages by default and you can omit `stages` declaration:
 
+```
 stages:
 
 - .pre
@@ -262,6 +282,7 @@ stages:
 - test
 - deploy
 - .post
+```
 
 ## 36. Publishing a JUnit test report
 
@@ -269,6 +290,7 @@ stages:
 - https://docs.gitlab.com/ci/testing/unit_test_reports/
 - https://docs.gitlab.com/ci/testing/unit_test_report_examples/
 
+```
 ...
 unit_tests:
 image: node:22-alpine
@@ -278,6 +300,7 @@ artifacts:
 when: always
 reports:
 junit: reports/junit.xml
+```
 
 ## 37. Testing the tests (ensure that the tests fail!)
 
@@ -302,6 +325,7 @@ Fast-Forward merge, encourage squash, Protect branch.
 - https://docs.gitlab.com/ci/testing/code_quality/#eslint
 - https://www.npmjs.com/package/eslint-formatter-gitlab
   Copy code of stage:
+  ```
   ...
   eslint:
   image: node:20-alpine
@@ -310,6 +334,7 @@ Fast-Forward merge, encourage squash, Protect branch.
   reports:
   codequality: gl-codequality.json --- new widget in GitLab MR
   ...
+  ```
 
 ## 43. How to structure a pipeline?
 
@@ -319,10 +344,12 @@ If there is quick/fast stages, like eslint put it as soon a possible to reduce t
 
 Put `.` to disable stage execution
 
+```
 .test_artifact:
 image: alpine
 stage: test
 script: - echo "Testing" - test -f "build/index.html"
+```
 
 You can override stage just define it with the same name after.
 
@@ -340,17 +367,21 @@ You can override stage just define it with the same name after.
 
 - https://docs.netlify.com/cli/get-started/
 
+```
 ...
 netlify:
 image: node:22-alpine
 stage: .pre
 script: - npm install -g netlify-cli - netlify --version
+```
 
 ## 49. Storing project configuration in environment variables
 
 - https://cli.netlify.com/commands/deploy/ (find vars -> NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID)
 
 Define env var for job:
+
+```
 ....
 netlify:
 image: node:22-alpine
@@ -358,6 +389,7 @@ stage: .pre
 variables:
 NETLIFY_SITE_ID: 'f580bcf5-9536-48bd-8426-7cf7dbe9c16b'
 script: - npm install -g netlify-cli - netlify --version - echo "Deploying to site id $NETLIFY_SITE_ID"
+```
 
 ## 50. Managing secrets
 
@@ -380,6 +412,7 @@ NETLIFY_AUTH_TOKEN='Generated token' (https://cli.netlify.com/commands/deploy/)
 - https://cli.netlify.com/commands/deploy/
 - https://docs.netlify.com/site-deploys/create-deploys/#netlify-cli
 
+```
 ....
 netlify:
 image: node:22-alpine
@@ -387,6 +420,7 @@ stage: deploy
 variables:
 NETLIFY_SITE_ID: 'f580bcf5-9536-48bd-8426-7cf7dbe9c16b'
 script: - npm install -g netlify-cli - netlify --version - netlify status - echo "Deploying to site id $NETLIFY_SITE_ID" - netlify deploy --prod --no-build --dir=build
+```
 
 ## 54. Smoke tests
 
@@ -395,12 +429,14 @@ script: - npm install -g netlify-cli - netlify --version - netlify status - echo
 - https://docs.gitlab.com/ci/yaml/#rules
 - https://docs.gitlab.com/ci/variables/predefined_variables/
 
+```
 ...
 netlify:
 image: node:22-alpine
 stage: deploy
 rules: - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
 ...
+```
 
 where:
 CI_COMMIT_REF_NAME - The branch or tag name for which project is built. (Pre-pipeline)
@@ -411,6 +447,7 @@ CI_DEFAULT_BRANCH - The name of the project’s default branch. (Pre-pipeline)
 - https://docs.gitlab.com/ci/yaml/#before_script
 - https://docs.gitlab.com/ci/yaml/#after_script
 
+```
 default:
 before_script: - echo "This is executed in all jobs"
 ...
@@ -421,11 +458,13 @@ image: node:22-alpine
 before_script: - npm install -g netlify-cli - apk add curl
 script: - netlify --version
 ....
+```
 
 ## 57. Deployment Strategies: Non-production environments
 
 ## 58. Deploying to the staging environment
 
+```
 netlify_staging:
 image: node:22-alpine
 stage: deploy_staging
@@ -439,14 +478,17 @@ stage: deploy_prod
 rules: - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
 before_script: - npm install -g netlify-cli - apk add curl
 script: - netlify --version - netlify status - echo "Deploying to site id $NETLIFY_SITE_ID" - netlify deploy --prod --no-build --dir=build - curl 'https://forelock-learn-gitlab.netlify.app/' | grep 'GitLab'
+```
 
 ## 59. Manual approval step before deploying to production
 
+```
 netlify_prod:
 image: node:22-alpine
 stage: deploy_prod
 when: manual ----- !!!!
 rules: - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+```
 
 ## 60. Continuous Delivery and Continuous Deployment
 
@@ -460,6 +502,7 @@ Continuous Deployment - deploys app into production automatically without any ma
 
 With
 
+```
 ...
 netlify_review:
 image: node:22-alpine
@@ -467,6 +510,7 @@ stage: deploy_review
 before_script: - npm install -g netlify-cli
 script: - netlify --version - netlify status - echo "Deploying to site id $NETLIFY_SITE_ID" - netlify deploy --no-build --dir=build
 ....
+```
 
 ## 62. Merge request pipeline vs Branch pipeline
 
@@ -476,14 +520,17 @@ script: - netlify --version - netlify status - echo "Deploying to site id $NETLI
 
 Setting up globally on the top of the file:
 
+```
 workflow:
 rules: - if: '$CI_PIPELINE_SOURCE == "merge_request_event"' ----- Control when merge request pipelines run. - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 ....
+```
 
 ## 63. Parsing CLI response data (w/ jq JSON parser)
 
 - https://jqlang.org/
 
+```
 netlify_review:
 image: node:22-alpine
 stage: deploy_review
@@ -502,6 +549,7 @@ rules:
   - REVIEW_URL=$(jq -r '.deploy_url' deploy-result.json) ---- prase json and extract value
   - echo $REVIEW_URL
   - curl $REVIEW_URL | grep 'GitLab'
+```
 
 ## 64. Defining dynamic environments
 
@@ -509,6 +557,7 @@ rules:
 - https://docs.gitlab.com/ci/environments/#set-a-dynamic-environment-url
 - https://docs.gitlab.com/ci/variables/predefined_variables/
 
+```
 netlify_review:
 image: node:22-alpine
 stage: deploy_review
@@ -535,6 +584,7 @@ rules:
     artifacts: ------!!!!
     reports:
     dotenv: deploy.env
+```
 
 ![Sample Image](img/dynemic-env.png)
 
@@ -544,6 +594,7 @@ rules:
   To se the existing static envs go to: Project -> Operate -> Environments
   Also those envs will be seen on MRs
 
+```
 netlify_staging:
 ....
 environment:
@@ -561,6 +612,7 @@ url: 'https://forelock-learn-gitlab.netlify.app/'
 ....
 script:
 .... - curl $CI_ENVIRONMENT_URL | grep 'GitLab'
+```
 
 ## 66. Scoping variables to a specific environment
 
@@ -575,15 +627,18 @@ Each var could be set up for all envs or particular env
 - https://playwright.dev/
 - https://playwright.dev/docs/docker
 
+```
 e2e:
 stage: .pre
 image: mcr.microsoft.com/playwright:v1.49.1-noble
 variables:
 APP_BASE_URL: 'https://forelock-learn-gitlab.netlify.app/'
 script: - npm ci - npm run e2e
+```
 
 ## 69. Passing data between jobs with environment variables
 
+```
 netlify_review:
 .... - echo "REVIEW_URL=$REVIEW_URL" > deploy.env
 artifacts:
@@ -595,23 +650,29 @@ e2e:
 variables:
 APP_BASE_URL: $REVIEW_URL
 ...
+```
 
 ## 70. Assignment: Publishing the E2E JUnit report
 
+```
 ...
 artifacts:
 when: always
 paths: - reports/
 reports:
 junit: reports/playwright-junit.xml
+```
 
 ## 72. Publishing an HTML report
 
 For now just add it to artifacts and browse them there
+
+```
 ...
 artifacts:
 when: always
 paths: - reports/
+```
 
 ## 73. Setting a build version
 
@@ -649,14 +710,17 @@ Setup environments
 
 ## 78. Creating a Dockerfile
 
+```
 ci/Dockerfile
 ....
 FROM: node:22-alpine
 RUN npm install -g netlify-cli
 RUN apk add curl
+```
 
 ## 79. Running Docker CLI commands in GitLab
 
+```
 ...
 test_docker:
 stage: .pre
@@ -666,6 +730,7 @@ script: - docker --version - docker version
 ...
 
 image: docker:28 - This specifies the Docker image to be used for this job.
+```
 
 - docker:28 is an official Docker image tagged with version 28.
 - It provides the necessary tools (like the Docker CLI) to interact with Docker from within the pipeline.
@@ -680,6 +745,7 @@ docker version: This command provides detailed information about the Docker clie
 
 ## 80. Building a Docker image
 
+```
 ci/Dockerfile
 FROM node:22-alpine
 RUN npm install -g netlify-cli
@@ -693,34 +759,43 @@ image: docker:28
 services: - docker:28-dind
 script: - docker version - docker build -t netlify -f ci/Dockerfile . - docker image ls
 ...
+```
 
 ## 81. GitLab container registry
 
+```
 ...
 script: - docker version - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
 ....
+```
 
 ## 82. Pushing an image to the GitLab container registry
 
+```
 ...
 
 - docker build -t $CI_REGISTRY_IMAGE/netlify -f ci/Dockerfile .
 - docker image ls
 - docker push $CI_REGISTRY_IMAGE/netlify
   ...
+```
 
 ## 83. Using a custom Docker image in the pipeline
 
+```
 netlify_prod:
 image: $CI_REGISTRY_IMAGE/netlify
+```
 
 ## 84. Create a scheduled pipeline
 
+```
 build_docker_netlify:
 stage: .pre
 image: docker:28
 rules: - if: '$CI_PIPELINE_SOURCE == "schedule"'
 ...
+```
 
 This job disappears from pipeline
 
@@ -741,12 +816,14 @@ Create S3 bucket:
 
 - https://gitlab.com/-/ide/project/forelock/learn-gitlab-app-2/
 
+```
 aws_s3:
 stage: .pre
 image:
 name: amazon/aws-cli:2.27.37
 entrypoint: [""]
 script: - aws --version
+```
 
 entrypoint - we can override entry point of image, because amazon/aws-cli returns 'aws'
 
@@ -859,10 +936,12 @@ We made s3 hosting just for example how to work with AWS CLI and AWS S3
 
 Create free EC2 instance and connect to it via SSH. Execute next commands:
 
+```
 sudo dnf install -y nginx
 sudo systemctl start nginx
 sudo systemctl enable nginx
 sudo systemctl status nginx
+```
 
 then you can open web site by public IP or domain name using http only
 
